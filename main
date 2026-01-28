@@ -1,0 +1,843 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, GradientBoostingClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.svm import SVC
+from sqlalchemy import String, Column, Integer, Enum, Float, create_engine, func, MetaData, Table, insert, desc, asc, case, over
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+DATABASE_URL = "sqlite:///extrovert_introvert_behavior.db"
+database_name = "extrovert_introvert_behavior.db"
+Base = declarative_base()
+engine = create_engine(DATABASE_URL, echo=True)
+Session = sessionmaker(bind=engine)
+session = Session()
+
+def read_data(dt):
+    """Read csv data.
+
+    Args:
+        dt (str): csv file.
+
+    Returns:
+        pd.DataFrame: Dataset.
+
+    Raises:
+        FileNotFoundError: File not found.
+    """
+    try:
+        df = pd.read_csv(dt)
+    except:
+        raise FileNotFoundError("Dataset file not found")
+    return df
+
+def dataframe_to_csv(df, filename):
+    """Returns the dataframe in csv format.
+    Used solely for the purpose of making sure the dataframe contains what it's supposed to.
+
+    Args:
+        df (DataFrame): Dataframe to convert.
+        filename (str): Location of the saved csv.
+    """
+    df.to_csv(filename, index=False)
+
+dataset = read_data("Data/personality_dataset.csv")
+dataset2 = read_data("Data/personality_datasert.csv")
+dataset = pd.concat([dataset, dataset2], ignore_index=True)
+
+dataset.columns = [
+    "time_spent_alone",
+    "stage_fear",
+    "social_event_attendance",
+    "going_outside",
+    "drained_after_socializing",
+    "friends_circle_size",
+    "post_frequency",
+    "personality"
+]
+
+numeric_ranges = {
+    "time_spent_alone": (0, 11),
+    "social_event_attendance": (0, 10),
+    "going_outside": (0, 7),
+    "friends_circle_size": (0, 15),
+    "post_frequency": (0, 10)
+}
+
+numeric_columns = list(numeric_ranges.keys())
+
+yes_no_columns = ["stage_fear", "drained_after_socializing"]
+
+base_columns = [
+    "time_spent_alone",
+    "stage_fear",
+    "social_event_attendance",
+    "going_outside",
+    "drained_after_socializing",
+    "friends_circle_size",
+    "post_frequency",
+]
+
+predicted_columns = [
+    "predicted_personality",
+    "actual_personality",
+    "model"
+]
+
+model_accuracy = {
+    "logistic_regression" : 0.0,
+    "random_forest" : 0.0,
+    "neural_network" : 0.0,
+    "svm" : 0.0,
+    "adaboost" : 0.0,
+    "gradient_boosting" : 0.0,
+    "knn" : 0.0
+}
+
+
+class PersonalityBehaviorRawData(Base):
+    """Table with raw data, thus "allows" records that make no sense."""
+    __tablename__ = 'personality_behavior_raw_data'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    time_spent_alone = Column(Float)
+    stage_fear = Column(String)
+    social_event_attendance = Column(Float)
+    going_outside = Column(Float)
+    drained_after_socializing = Column(String)
+    friends_circle_size = Column(Float)
+    post_frequency = Column(Float)
+    personality = Column(String)
+
+class PersonalityBehaviorData(Base):
+    """Table with preprocessed data."""
+    __tablename__ = 'personality_behavior_data'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    time_spent_alone = Column(Integer, nullable=False)
+    stage_fear = Column(String, nullable=False)
+    social_event_attendance = Column(Integer, nullable=False)
+    going_outside = Column(Integer, nullable=False)
+    drained_after_socializing = Column(String, nullable=False)
+    friends_circle_size = Column(Integer, nullable=False)
+    post_frequency = Column(Integer, nullable=False)
+    personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
+
+class PersonalityBehaviorTraining(Base):
+    """Table with training data."""
+    __tablename__ = 'personality_behavior_training'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    time_spent_alone = Column(Integer, nullable=False)
+    stage_fear = Column(String, nullable=False)
+    social_event_attendance = Column(Integer, nullable=False)
+    going_outside = Column(Integer, nullable=False)
+    drained_after_socializing = Column(String, nullable=False)
+    friends_circle_size = Column(Integer, nullable=False)
+    post_frequency = Column(Integer, nullable=False)
+    personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
+
+class PersonalityBehaviorTesting(Base):
+    """Table with testing data."""
+    __tablename__ = 'personality_behavior_testing'
+    person_index = Column(Integer, primary_key = True, nullable=False)
+    time_spent_alone = Column(Integer, nullable=False)
+    stage_fear = Column(String, nullable=False)
+    social_event_attendance = Column(Integer, nullable=False)
+    going_outside = Column(Integer, nullable=False)
+    drained_after_socializing = Column(String, nullable=False)
+    friends_circle_size = Column(Integer, nullable=False)
+    post_frequency = Column(Integer, nullable=False)
+    personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
+
+class PersonalityBehaviorPrediction(Base):
+    """Table with predictions of the different models and actual personality."""
+    __tablename__ = 'personality_behavior_prediction'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    person_index = Column(Integer, nullable=False)
+    model = Column(String, nullable=False)
+    time_spent_alone = Column(Integer, nullable=False)
+    stage_fear = Column(String, nullable=False)
+    social_event_attendance = Column(Integer, nullable=False)
+    going_outside = Column(Integer, nullable=False)
+    drained_after_socializing = Column(String, nullable=False)
+    friends_circle_size = Column(Integer, nullable=False)
+    post_frequency = Column(Integer, nullable=False)
+    predicted_personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
+    actual_personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
+
+class PersonalityBehaviorModelAccuracy(Base):
+    """Table with model accuracy."""
+    __tablename__ = 'personality_model_accuracy'
+    model = Column(String, primary_key=True, nullable=False)
+    accuracy = Column(Float(4), nullable=False)
+
+class MachineLearningModel(Base):
+    """Table with names of the ML models used."""
+    __tablename__ = 'model_name'
+    model = Column(String, primary_key=True, nullable=False)
+
+# Create all tables
+Base.metadata.create_all(engine)
+
+def insert_to_sql_table(table_name, data):
+    """Insert dataframe into appropriate SQL table.
+
+    Args:
+        table_name(str): name of table to insert into.
+        data (DataFrame or list): data to insert.
+    """
+    if isinstance(data, pd.DataFrame):
+        data.to_sql(
+            table_name,
+            con=engine,
+            if_exists="append",
+            index=False
+        )
+    # Only once needed for the whole code
+    elif isinstance(data, list):
+        metadata = MetaData()
+        column_name = "model"
+
+        table = Table(
+            table_name,
+            metadata,
+            autoload_with=engine
+        )
+
+        # Convert list to list of dicts
+        rows = [{column_name: v} for v in data]
+
+        if not rows:
+            return
+
+        with engine.begin() as conn:
+            conn.execute(insert(table), rows)
+    else:
+        raise TypeError("Only a dataframe or a list can be inputted into an SQL table.")
+
+def preprocess(df):
+    """Return preprocessed dataframe, scaler and label encoders.
+    Drop rows with any missing values.
+    Drop rows with invalid types and values.
+    Perform scaling.
+
+    Args:
+        df (DataFrame): Dataframe to preprocess.
+
+    Returns:
+        (DataFrame): Preprocessed dataframe.
+        (StandardScaler): Scaler used to preprocess data.
+        (LabelEncoder): Label encoder used to preprocess data.
+    """
+    # Drop rows with any missing values
+    cleaned_df = df.dropna().reset_index(drop=True)
+    valid_rows = []
+
+    for index, row in cleaned_df.iterrows():
+        drop = False
+        for col in cleaned_df.columns:
+            value = row[col]
+            # Numeric ranges
+            if col in numeric_columns:
+                # Allow np numeric types
+                if not np.issubdtype(type(value), np.number):
+                    drop = True
+                    break
+                # Check range
+                min_val, max_val = numeric_ranges[col]
+                if not (min_val <= value <= max_val):
+                    drop = True
+                    break
+                # Check integer
+                if value != int(value):
+                    drop = True
+                    break
+            # Yes no columns
+            elif col in yes_no_columns:
+                if value not in ["Yes", "No"]:
+                    drop = True
+                    break
+            # Extrovert introvert columns
+            elif col == "personality":
+                if value not in ["Extrovert", "Introvert"]:
+                    drop = True
+                    break
+        # Include row in the final DataFrame, all criteria fulfilled
+        if not drop:
+            valid_rows.append(index)
+
+    cleaned_df = cleaned_df.loc[valid_rows].reset_index(drop=True)
+
+    label_encoders = {}
+
+    # Encode Yes/No columns
+    for col in yes_no_columns:
+        le = LabelEncoder()
+        cleaned_df[col] = le.fit_transform(cleaned_df[col])
+        label_encoders[col] = le
+
+    # Encode Personality
+    le_personality = LabelEncoder()
+    cleaned_df["personality"] = le_personality.fit_transform(cleaned_df["personality"])
+    label_encoders["personality"] = le_personality
+
+    # Scaling process
+    scaler = StandardScaler()
+    cleaned_df[numeric_columns] = scaler.fit_transform(cleaned_df[numeric_columns])
+
+    return cleaned_df, scaler, label_encoders
+
+predicted_dataframes = pd.DataFrame()
+
+def predicted_dataframe(X_test, y_test, prediction, model, person_index):
+    """Return dataframe with predicted and actual values while preserving Person_index.
+    Add the dataframe with predicted and actual values to predicted_dataframes.
+
+    Args:
+        X_test (List): test's X (Features).
+        y_test (List): test's y (Personality type).
+        prediction (List): predicted personality types.
+        model (str): name of the used ML model.
+        person_index (List): persons' index.
+
+    Returns:
+        (DataFrame): Dataframe containing features,
+            predicted and actual personality, model's name.
+    """
+    global predicted_dataframes
+    predicted = X_test.copy()
+    predicted.insert(0, "person_index", person_index)
+    predicted.insert(1, "model", model)
+    predicted["predicted_personality"] = prediction
+    predicted["actual_personality"] = y_test
+    predicted_dataframes = pd.concat([predicted_dataframes, predicted], ignore_index=True)
+    return predicted
+
+def inverse_scale_dataframe(df, scaler, label_encoders):
+    """Return the inversely scaled dataframe.
+
+    Args:
+        df (DataFrame): dataframe to inverse scale.
+        scaler (np.scaler): scaler used to obtain the original numerical values.
+        label_encoders (dict): label encoders used to obtain the original categorical values.
+
+    Returns:
+        (DataFrame): inverse scaled dataframe.
+    """
+    df_original = df.copy()
+
+    # Inverse scale numeric columns
+    df_original[numeric_columns] = scaler.inverse_transform(
+        df_original[numeric_columns]
+    )
+    df_original[numeric_columns] = df_original[numeric_columns].round(0).astype(int)
+
+    # Inverse decode non numerical
+    for col, le in label_encoders.items():
+        if col in df_original.columns:
+            df_original[col] = le.inverse_transform(df_original[col])
+    le = label_encoders["personality"]
+    if "predicted_personality" in df_original.columns:
+        df_original["predicted_personality"] = le.inverse_transform(
+            df_original["predicted_personality"]
+        )
+    if "actual_personality" in df_original.columns:
+        df_original["actual_personality"] = le.inverse_transform(
+            df_original["actual_personality"]
+        )
+    return df_original
+
+def train_model(model, name, X_train, y_train, X_test, y_test, id_test):
+    """Train model and test it.
+    Obtain the predicted dataframe.
+    Return the accuracy of the trained model for the test sample.
+
+    Args:
+        model (Sklearn Model): Model.
+        name (str): Name of the model.
+        X_train (List) : training's X (Features).
+        y_train (List): training's y (Personality type).
+        X_test (List) : test's X (Features).
+        y_test (List): test's y (Personality type).
+        id_test (List): persons' index.
+
+    Returns:
+        (float): Accuracy of the trained model for the test sample.
+    """
+
+    model.fit(X_train, y_train)
+    pred = model.predict(X_test)
+    df = predicted_dataframe(X_test, y_test, pred, name, id_test.values)
+    dataframe_to_csv(df, f"{name}.csv")
+    accuracy = accuracy_score(y_test, pred)
+    model_accuracy[f"{name}"] = round(accuracy, 4)
+    return accuracy
+
+# Databases part - SQLAlchemy
+def find_mistyped():
+    """Use SQLAlchemy to compute number of incorrect predictions for each person.
+
+    Returns:
+        (List): Incorrect predictions for each person in descending order.
+    """
+    return (
+        session.query(
+            PersonalityBehaviorPrediction.person_index,
+            func.sum(
+                case(
+                    (
+                        PersonalityBehaviorPrediction.predicted_personality
+                        != PersonalityBehaviorPrediction.actual_personality,
+                        1,
+                    ),
+                    else_= 0,
+                )
+            ).label("incorrect_predictions")
+        )
+        .group_by(PersonalityBehaviorPrediction.person_index)
+        .order_by(desc("incorrect_predictions"))
+        .all()
+    )
+
+def find_mistyped_per_model():
+    """Use SQLAlchemy to compute number of incorrect predictions for each model.
+
+    Returns:
+        (List): Incorrect predictions for each model in descending order.
+    """
+    return (
+        session.query(
+            PersonalityBehaviorPrediction.model,
+            func.sum(
+                case(
+                    (
+                        PersonalityBehaviorPrediction.predicted_personality
+                        != PersonalityBehaviorPrediction.actual_personality,
+                        1,
+                    ),
+                    else_= 0,
+                )
+            ).label("incorrect_predictions")
+        )
+        .group_by(PersonalityBehaviorPrediction.model)
+        .order_by(desc("incorrect_predictions"))
+        .all()
+    )
+
+def find_all_introverted_extrovert_scores():
+    """Use SQLAlchemy to compute introversion and extroversion score
+        for each person in the preprocessed table.
+    Return data in descending order for introversion and ascending for extroversion.
+
+    Returns:
+        (List): Personality scores for each person in order.
+    """
+    return (
+        session.query(
+            PersonalityBehaviorData.id,
+            (
+                PersonalityBehaviorData.time_spent_alone
+                + PersonalityBehaviorData.stage_fear
+                + PersonalityBehaviorData.drained_after_socializing
+            ).label("introversion_score"),
+            (
+                    PersonalityBehaviorData.social_event_attendance
+                    + PersonalityBehaviorData.going_outside
+                    + PersonalityBehaviorData.friends_circle_size
+                    + PersonalityBehaviorData.post_frequency
+            ).label("extroversion_score")
+        )
+        .filter(PersonalityBehaviorData.personality == 1)
+        .order_by(desc("introversion_score"),asc("extroversion_score"))
+        .all()
+    )
+
+def find_all_extroverted_introvert_scores():
+    """Use SQLAlchemy to compute extroversion and introversion score
+        for each person in the preprocessed table.
+    Return data in descending order for extroversion and ascending for introversion.
+
+    Returns:
+        (List): Personality scores for each person in order.
+    """
+    return (
+        session.query(
+            PersonalityBehaviorData.id,
+            (
+                PersonalityBehaviorData.social_event_attendance
+                + PersonalityBehaviorData.going_outside
+                + PersonalityBehaviorData.friends_circle_size
+                + PersonalityBehaviorData.post_frequency
+            ).label("extroversion_score"),
+            (
+                    PersonalityBehaviorData.time_spent_alone
+                    + PersonalityBehaviorData.stage_fear
+                    + PersonalityBehaviorData.drained_after_socializing
+            ).label("introversion_score")
+        )
+        .filter(PersonalityBehaviorData.personality == 0)
+        .order_by(desc("extroversion_score"), asc("introversion_score"))
+        .all()
+    )
+
+def find_most_introverted_extrovert():
+    """Use SQLAlchemy to compute introversion and extroversion score
+        for each person in the preprocessed table.
+    Return list with most introverted extroverts and their scores
+        in descending order for introversion and ascending for extroversion.
+
+    Returns:
+        (List): Personality scores for each person in order.
+    """
+    introversion_score = (
+        PersonalityBehaviorData.time_spent_alone
+        + PersonalityBehaviorData.stage_fear
+        + PersonalityBehaviorData.drained_after_socializing
+    )
+
+    extroversion_score = (
+        PersonalityBehaviorData.social_event_attendance
+        + PersonalityBehaviorData.going_outside
+        + PersonalityBehaviorData.friends_circle_size
+        + PersonalityBehaviorData.post_frequency
+    )
+
+    ranked_query = (
+        session.query(
+            PersonalityBehaviorData.id,
+            introversion_score.label("introversion_score"),
+            extroversion_score.label("extroversion_score"),
+            over(
+                func.rank(),
+                order_by=(desc(introversion_score), asc(extroversion_score))
+            ).label("rnk")
+        )
+        .filter(PersonalityBehaviorData.personality == 1)
+        .subquery()
+    )
+
+    return (
+        session.query(
+            ranked_query.c.id,
+            ranked_query.c.introversion_score,
+            ranked_query.c.extroversion_score,
+        )
+        .filter(ranked_query.c.rnk <= 3)
+        .order_by(
+            desc(ranked_query.c.introversion_score),
+            asc(ranked_query.c.extroversion_score),
+        )
+        .all()
+    )
+
+def find_most_extroverted_introvert():
+    """Use SQLAlchemy to compute extroversion and introversion score
+        for each person in the preprocessed table.
+    Return list with most extroverted introverts and their scores
+        in descending order for extroversion and ascending for introversion.
+
+    Returns:
+        (List): Personality scores for each person in order.
+    """
+    extroversion_score = (
+        PersonalityBehaviorData.social_event_attendance
+        + PersonalityBehaviorData.going_outside
+        + PersonalityBehaviorData.friends_circle_size
+        + PersonalityBehaviorData.post_frequency
+    )
+
+    introversion_score = (
+        PersonalityBehaviorData.time_spent_alone
+        + PersonalityBehaviorData.stage_fear
+        + PersonalityBehaviorData.drained_after_socializing
+    )
+
+    ranked_query = (
+        session.query(
+            PersonalityBehaviorData.id,
+            extroversion_score.label("extroversion_score"),
+            introversion_score.label("introversion_score"),
+            over(
+                func.rank(),
+                order_by=(desc(extroversion_score), asc(introversion_score))
+            ).label("rnk")
+        )
+        .filter(PersonalityBehaviorData.personality == 0)
+        .subquery()
+    )
+
+    return (
+        session.query(
+            ranked_query.c.id,
+            ranked_query.c.extroversion_score,
+            ranked_query.c.introversion_score,
+        )
+        .filter(ranked_query.c.rnk <= 3)
+        .order_by(
+            desc(ranked_query.c.extroversion_score),
+            asc(ranked_query.c.introversion_score),
+        )
+        .all()
+    )
+
+# Data analysis part
+def plot_mistyped_people(m):
+    """Plot a bar char with count of people mistyped n times.
+
+    Args:
+        m (List): List representing how many times someone was mistyped.
+    """
+    mistypes = [0] * 8
+
+    for people, mistyped in m:
+        mistypes[mistyped] += 1
+
+    # Bar chart with number of people mistyped n times
+    bar_colors = ['#11FF00', '#A2FF00', '#EEFF00', '#FFEA00', '#FFC800', '#FF9D00', '#FF4800', '#FF2900']
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar([0, 1, 2, 3, 4, 5, 6, 7], mistypes, color=bar_colors)
+    plt.xlabel("Number of mistypes")
+    plt.ylabel("Number of mistyped people")
+    plt.title("Total number of people mistyped n times")
+    plt.yscale('log')
+    for bar in bars:
+        height = bar.get_height()
+        if height > 0:
+            plt.text(
+                bar.get_x() + bar.get_width() / 2,
+                height * 1.05,  # offset for text
+                f"{int(height)}",  # exact value
+                ha='center',
+                va='bottom',
+                fontsize=10
+            )
+    plt.show()
+
+def correlation_analysis(df, comment):
+    """Generate a heatmap showing correlations
+        among all numerical features in the dataset.
+
+    Args:
+        df (DataFrame): Preprocessed dataframe.
+        comment (str): Addition to the plot's title.
+
+    Raises:
+        ValueError: If the data is empty.
+    """
+    if df.empty:
+        raise ValueError("Data cannot be empty.")
+    # Correlation matrix scores -1 to 1
+    corr = df.corr()
+    # Mask for the diagonal
+    mask = np.eye(corr.shape[0], dtype=bool)
+
+    plt.figure(figsize=(20, 20), dpi=150)
+    sns.heatmap(
+        corr,
+        mask=mask,
+        annot=True,
+        annot_kws={"size": 14},
+        cmap="Reds",
+        square=True,
+        cbar_kws={"shrink": 0.8}
+    )
+    plt.title(f"Correlation Analysis Heatmap {comment}", fontsize=25)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+def pie_chart_personalities(df):
+    """Generate a distribution of different personalities
+        from the preprocessed dataframe.
+
+    Args:
+        df (DataFrame): Preprocessed dataframe.
+
+    Raises:
+        ValueError: If the data is empty.
+    """
+    if df.empty:
+        raise ValueError("Data cannot be empty.")
+    plt.figure(figsize=(8, 8))
+    personality_counts = (
+        df["personality"]
+        .value_counts()
+        .reindex(["Extrovert", "Introvert"], fill_value=0)
+    )
+
+    plt.pie(
+        personality_counts,
+        autopct="%1.1f%%",
+        startangle=90,
+        colors=['#AD2D3B', '#5637B0'],
+        wedgeprops={"edgecolor": "none"},
+        textprops={'fontsize': 20, 'color': 'black'}
+    )
+
+    plt.legend(
+        personality_counts.index,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=2,
+        fontsize=18
+    )
+
+    plt.title("Personality Distribution in the Dataset")
+    plt.axis("equal")  # To keep pie circular
+    plt.show()
+
+def bar_chart_model_mistypes():
+    """Generate a bar chart displaying
+        the number of incorrect predictions per each model.
+    """
+
+    model_mistypes = find_mistyped_per_model()
+    # Get models and mistypes for plotting
+    models = [m[0] for m in model_mistypes]
+    mistypes = [m[1] for m in model_mistypes]
+
+    # Bar chart with model mistypes
+    plt.figure(figsize=(10, 6))
+    barh = plt.barh(models, mistypes, color='tomato')
+    for bar in barh:
+        width = bar.get_width()
+        if width > 0:
+            plt.text(
+                width * 1.01,  # offset
+                bar.get_y() + bar.get_height() / 2,  # y centered
+                f"{int(width)}",  # exact value
+                ha='left',
+                va='center',
+                fontsize=10
+            )
+
+    plt.xlabel("Number of Incorrect Predictions")
+    plt.ylabel("Model")
+    plt.title("Mistyped rows per Model")
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    # Add raw dataset to the table with raw data
+    insert_to_sql_table("personality_behavior_raw_data", dataset)
+
+    # Preprocess
+    preprocessed_df, scaler, label_encoders = preprocess(dataset)
+    preprocessed_df = preprocessed_df.copy()
+    preprocessed_df.reset_index(drop=True, inplace=True)
+    preprocessed_df.insert(0, "id", np.arange(1, len(preprocessed_df) + 1))
+    # Create csv from dataframe, not necessary I just made it so as to make sure all is good
+    dataframe_to_csv(preprocessed_df, "personality_behavior_data.csv")
+    # Add preprocessed data to table
+    insert_to_sql_table("personality_behavior_data", preprocessed_df)
+
+    # Get training data and testing data
+    # X - Features, y -target
+    X = preprocessed_df.drop(columns=["personality", "id"])
+    y = preprocessed_df["personality"]
+    # Needed for mapping
+    ids = preprocessed_df["id"]
+
+    # Select 20% of preprocessed data for testing
+    X_train, X_test, y_train, y_test, id_train, id_test = train_test_split(
+        X, y, ids,
+        test_size=0.2,
+        # Random state set to 42 so that train - test splits are always deterministic and reproducible
+        # No matter how many times the code will be executed, the sets will always be the same
+        random_state=42,
+        # Ensure class distribution is preserved
+        stratify=y
+    )
+
+    train_df = X_train.copy()
+    train_df["personality"] = y_train
+
+    # Combine X_test and y_test into a single DataFrame
+    test_df = X_test.copy()
+    test_df["personality"] = y_test
+    test_df.insert(0, "person_index", id_test.values)  # maps to preprocessed_df.id
+
+    # Again, not needed. Just to make sure.
+    dataframe_to_csv(test_df, "test_df.csv")
+
+    # Add to tables
+    insert_to_sql_table("personality_behavior_training", train_df)
+    insert_to_sql_table("personality_behavior_testing", test_df)
+
+    model_names = ["Logistic Regression", "Random Forest", "Neural network", "Support Vector Machine",
+                   "Ada Boost", "Gradient Boosting", "K Nearest Neighbors"]
+    # Insert all models' names to table
+    insert_to_sql_table("model_name", model_names)
+
+    # Train and test models
+    train_model(LogisticRegression(max_iter=1000), "Logistic Regression", X_train, y_train, X_test, y_test, id_test)
+    train_model(RandomForestClassifier(n_estimators=1000), "Random Forest", X_train, y_train, X_test, y_test, id_test)
+    train_model(MLPClassifier(max_iter=1000), "Neural Network", X_train, y_train, X_test, y_test, id_test)
+    train_model(SVC(kernel="rbf"), "Support Vector Machine", X_train, y_train, X_test, y_test, id_test)
+    train_model(AdaBoostClassifier(n_estimators=1000), "Ada Boost", X_train, y_train, X_test, y_test, id_test)
+    train_model(GradientBoostingClassifier(n_estimators=1000), "Gradient Boosting", X_train, y_train, X_test, y_test, id_test)
+    train_model(KNeighborsClassifier(n_neighbors=3), "K Nearest Neighbors", X_train, y_train, X_test, y_test, id_test)
+
+    # Again, not needed. Just to check if works
+    dataframe_to_csv(predicted_dataframes, "personality_behavior_prediction.csv")
+
+    predicted_inverse_scaled_df = inverse_scale_dataframe(predicted_dataframes, scaler, label_encoders)
+
+    predicted_inverse_scaled_df = predicted_inverse_scaled_df.rename(
+        columns={"index": "person_index"}
+    )
+
+    # Again, not needed. Just to check
+    dataframe_to_csv(predicted_inverse_scaled_df, "personality_behavior_prediction_original.csv")
+
+    insert_to_sql_table("personality_behavior_prediction", predicted_inverse_scaled_df)
+
+    model_accuracy_df = pd.DataFrame.from_dict(model_accuracy, orient='index', columns=["accuracy"])
+    model_accuracy_df = model_accuracy_df.reset_index().rename(columns={"index": "model"})
+
+    # Add accuracy of models to table
+    insert_to_sql_table("personality_model_accuracy", model_accuracy_df)
+
+    for model, accuracy in model_accuracy.items():
+        print(f"Model: {model} showed accuracy: {accuracy}")
+    # Again, not needed
+    dataframe_to_csv(model_accuracy_df, "personality_behavior_model_accuracy.csv")
+
+    # Databases part
+    mistyped = find_mistyped()
+    for person, mistypes in mistyped:
+        print(f"Person {person} was mistyped {mistypes} times/time."
+        f" Which contributes to {mistypes*100/7:.0f}% incorrect predictions for them.")
+    plot_mistyped_people(mistyped)
+    most_introverted_extrovert = find_most_introverted_extrovert()
+    most_extroverted_introvert = find_most_extroverted_introvert()
+    for person, introversion_score, extroversion_score in most_introverted_extrovert:
+        print(f"Person {person} with personality extrovert has introversion score {introversion_score:.2f} "
+              f"and extroversion score {extroversion_score:.2f}.")
+    for person, extroversion_score, introversion_score in most_extroverted_introvert:
+        print(f"Person {person} with personality introvert has extroversion score {extroversion_score:.2f} "
+              f"and introversion score {introversion_score:.2f}.")
+
+    # Data analysis part, some depend on SQLAlchemy queries results
+    extroversion_correlation = preprocessed_df[
+        preprocessed_df["personality"] == 1
+        ].drop(columns=["id", "personality"])
+    # Correlation heatmap just for the extroverts
+    correlation_analysis(extroversion_correlation, "for Extroverts")
+    introversion_correlation = preprocessed_df[
+        preprocessed_df["personality"] == 0
+        ].drop(columns=["id", "personality"])
+    # Correlation heatmap for just the introverts
+    correlation_analysis(introversion_correlation, "for Introverts")
+    # Correlation heatmap for all
+    correlation_analysis(preprocessed_df.drop(columns=["personality", "id"]), "excluding personality category")
+    # Percentage of each personality in the dataset
+    pie_chart_personalities(inverse_scale_dataframe(preprocessed_df, scaler, label_encoders))
+    # Number of mistypes per each model
+    bar_chart_model_mistypes()
