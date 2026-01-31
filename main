@@ -92,15 +92,14 @@ predicted_columns = [
 ]
 
 model_accuracy = {
-    "logistic_regression" : 0.0,
-    "random_forest" : 0.0,
-    "neural_network" : 0.0,
-    "svm" : 0.0,
-    "adaboost" : 0.0,
-    "gradient_boosting" : 0.0,
-    "knn" : 0.0
+    "Logistic Regression" : 0.0,
+    "Random Forest" : 0.0,
+    "Neural Network" : 0.0,
+    "Support Vector Machine" : 0.0,
+    "Ada Boost" : 0.0,
+    "Gradient Boosting" : 0.0,
+    "K Nearest Neighbors" : 0.0
 }
-
 
 class PersonalityBehaviorRawData(Base):
     """Table with raw data, thus "allows" records that make no sense."""
@@ -119,39 +118,39 @@ class PersonalityBehaviorData(Base):
     """Table with preprocessed data."""
     __tablename__ = 'personality_behavior_data'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    time_spent_alone = Column(Integer, nullable=False)
+    time_spent_alone = Column(Float, nullable=False)
     stage_fear = Column(String, nullable=False)
-    social_event_attendance = Column(Integer, nullable=False)
-    going_outside = Column(Integer, nullable=False)
+    social_event_attendance = Column(Float, nullable=False)
+    going_outside = Column(Float, nullable=False)
     drained_after_socializing = Column(String, nullable=False)
-    friends_circle_size = Column(Integer, nullable=False)
-    post_frequency = Column(Integer, nullable=False)
+    friends_circle_size = Column(Float, nullable=False)
+    post_frequency = Column(Float, nullable=False)
     personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
 
 class PersonalityBehaviorTraining(Base):
     """Table with training data."""
     __tablename__ = 'personality_behavior_training'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    time_spent_alone = Column(Integer, nullable=False)
+    time_spent_alone = Column(Float, nullable=False)
     stage_fear = Column(String, nullable=False)
-    social_event_attendance = Column(Integer, nullable=False)
-    going_outside = Column(Integer, nullable=False)
+    social_event_attendance = Column(Float, nullable=False)
+    going_outside = Column(Float, nullable=False)
     drained_after_socializing = Column(String, nullable=False)
-    friends_circle_size = Column(Integer, nullable=False)
-    post_frequency = Column(Integer, nullable=False)
+    friends_circle_size = Column(Float, nullable=False)
+    post_frequency = Column(Float, nullable=False)
     personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
 
 class PersonalityBehaviorTesting(Base):
     """Table with testing data."""
     __tablename__ = 'personality_behavior_testing'
     person_index = Column(Integer, primary_key = True, nullable=False)
-    time_spent_alone = Column(Integer, nullable=False)
+    time_spent_alone = Column(Float, nullable=False)
     stage_fear = Column(String, nullable=False)
-    social_event_attendance = Column(Integer, nullable=False)
-    going_outside = Column(Integer, nullable=False)
+    social_event_attendance = Column(Float, nullable=False)
+    going_outside = Column(Float, nullable=False)
     drained_after_socializing = Column(String, nullable=False)
-    friends_circle_size = Column(Integer, nullable=False)
-    post_frequency = Column(Integer, nullable=False)
+    friends_circle_size = Column(Float, nullable=False)
+    post_frequency = Column(Float, nullable=False)
     personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
 
 class PersonalityBehaviorPrediction(Base):
@@ -160,13 +159,13 @@ class PersonalityBehaviorPrediction(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     person_index = Column(Integer, nullable=False)
     model = Column(String, nullable=False)
-    time_spent_alone = Column(Integer, nullable=False)
+    time_spent_alone = Column(Float, nullable=False)
     stage_fear = Column(String, nullable=False)
-    social_event_attendance = Column(Integer, nullable=False)
-    going_outside = Column(Integer, nullable=False)
+    social_event_attendance = Column(Float, nullable=False)
+    going_outside = Column(Float, nullable=False)
     drained_after_socializing = Column(String, nullable=False)
-    friends_circle_size = Column(Integer, nullable=False)
-    post_frequency = Column(Integer, nullable=False)
+    friends_circle_size = Column(Float, nullable=False)
+    post_frequency = Column(Float, nullable=False)
     predicted_personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
     actual_personality = Column(Enum("Extrovert", "Introvert", name = "personality_enum"), nullable=False)
 
@@ -352,6 +351,8 @@ def inverse_scale_dataframe(df, scaler, label_encoders):
         )
     return df_original
 
+
+# noinspection PyShadowingNames
 def train_model(model, name, X_train, y_train, X_test, y_test, id_test):
     """Train model and test it.
     Obtain the predicted dataframe.
@@ -770,7 +771,7 @@ if __name__ == "__main__":
     insert_to_sql_table("personality_behavior_training", train_df)
     insert_to_sql_table("personality_behavior_testing", test_df)
 
-    model_names = ["Logistic Regression", "Random Forest", "Neural network", "Support Vector Machine",
+    model_names = ["Logistic Regression", "Random Forest", "Neural Network", "Support Vector Machine",
                    "Ada Boost", "Gradient Boosting", "K Nearest Neighbors"]
     # Insert all models' names to table
     insert_to_sql_table("model_name", model_names)
